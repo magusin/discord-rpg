@@ -1,0 +1,24 @@
+{
+  "name": "discord-rpg",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/magusin/discord-rpg.git"
+  },
+  "author": "Hugo JACQUES",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/magusin/discord-rpg/issues"
+  },
+  "homepage": "https://github.com/magusin/discord-rpg#readme",
+  "dependencies": {
+    "discord.js": "^14.11.0",
+    "dotenv": "^16.0.3",
+    "mysql2": "^3.3.1"
+  }
+}
