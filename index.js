@@ -51,15 +51,19 @@ client.on('messageCreate', async function (message) {
         if (message.content === '!stats') {
             const playerStats = await getPlayerStats(message.author.username, message);
             if (playerStats) {
-                const stats = `**Vie** : ${playerStats.hp}   (Max : ${playerStats.hpMax})\n**Défense** : ${playerStats.def}\n**Force** : ${playerStats.str}\n**Dextérité**: ${playerStats.dex}\n**Point d'Action**: ${playerStats.pa}   (Max: ${playerStats.paMax})\n**Point d'expériences** : ${playerStats.xp}\n**Niveau** : ${playerStats.level}\n**Initiative** : ${playerStats.ini}`;
+                const stats = `**Vie** : ${playerStats.hp}   (Max : ${playerStats.hpMax})\n**Défense** : ${playerStats.def}\n**Force** : ${playerStats.str}\n**Dextérité**: ${playerStats.dex}\n**Point d'Action**: ${playerStats.pa}   (Max: ${playerStats.paMax})\n**Point d'expériences** : ${playerStats.xp}\n**Niveau** : ${playerStats.level}\n**Initiative** : ${playerStats.ini}\n**Gold** : ${playerStats.gold}`;
                 message.reply(`${message.author.username} a les statistiques suivantes:\n${stats}`);
             }
+        }
+        if (message.content === '!equip' || message.content === '!equipment') {
+            const playerStats = await getPlayerStats(message.author.username, message);
+             showEquip(playerStats, message)
         }
         if (message.content.startsWith('!stats ')) {
             const pseudo = message.content.slice(7);
             const playerStats = await getPlayerStats(pseudo, message);
             if (playerStats) {
-                const stats = `**Vie** : ${playerStats.hp}   (Max : ${playerStats.hpMax})\n**Défense** : ${playerStats.def}\n**Force** : ${playerStats.str}\n**Dextérité**: ${playerStats.dex}\n**Point d'Action**: ${playerStats.pa}   (Max: ${playerStats.paMax})\n**Point d'expériences** : ${playerStats.xp}\n**Niveau** : ${playerStats.level}\n**Initiative** : ${playerStats.ini}`;
+                const stats = `**Vie** : ${playerStats.hp}   (Max : ${playerStats.hpMax})\n**Défense** : ${playerStats.def}\n**Force** : ${playerStats.str}\n**Dextérité**: ${playerStats.dex}\n**Point d'Action**: ${playerStats.pa}   (Max: ${playerStats.paMax})\n**Point d'expériences** : ${playerStats.xp}\n**Niveau** : ${playerStats.level}\n**Initiative** : ${playerStats.ini}\n**Gold** : ${playerStats.gold}`;
                 message.reply(`${pseudo} a les statistiques suivantes:\n${stats}`);
             }
         }
@@ -142,14 +146,14 @@ client.on('messageCreate', async function (message) {
                 // Vérifier si l'un des joueurs a atteint 0 points de vie
                 if (defender.hp <= 0) {
                     defender.hp = 0
-                    isquestrunning = false
+                    
                     if (defender.type === "player") {
                         const victoryMessage = `${attacker.name} remporte le combat !`;
                         const finalMessage = `${defender.name} tombe à 0 HP`;
                         await connection.promise().query('UPDATE charactère SET hp = ? WHERE id = ?', [defender.hp, defender.id]);
                         let endMessage = await message.reply({ content: `${victoryMessage}\n${finalMessage}\n\n` });
                         endMessage
-                        
+
                     } else {
                         const winXp = Math.floor(Math.random() * (defender.xpMax - defender.xpMin + 1)) + defender.xpMin;
                         const victoryMessage = `${attacker.name} remporte le combat !`;
@@ -159,17 +163,62 @@ client.on('messageCreate', async function (message) {
                         endMessage
                         await connection.promise().query('UPDATE charactère SET hp = ?, xp = ? WHERE id = ?', [attacker.hp, attacker.xp + winXp, attacker.id]);
                         let loot = await lootEquipement(attacker.level)
-                        if (loot.length === 0) {
-                            combatEnd += "No pain no gain";
-                          } else {
+                        if (!loot) {
+                            combatEnd += "No pain no gain\n";
+                            endMessage = await endMessage.edit({ content: combatEnd });
+                        } else {
                             combatEnd += "Vous obtenez :\n";
-                            loot.forEach((equipment) => {
-                              combatEnd += `${equipment.name}\n`;
-                            });
-                            
-                          }
-                        endMessage = await endMessage.edit({ content: combatEnd });
+                            for (const equipment of loot) {
+                                combatEnd += `**${equipment.name}**\n`;
+                                endMessage = await endMessage.edit({ content: combatEnd });
+                                let itemCurrent = await compareItem(equipment, attacker)
+                                newGold = attacker.gold + equipment.gold
+                                if (itemCurrent[0].id === equipment.id) {
+                                    await connection.promise().query('UPDATE charactère SET gold = ? WHERE id = ?', [newGold, attacker.id]);
+                                    combatEnd += `Vous possédez déjà cette équipements, il a été vendu pour ${equipment.gold} Gold\n`;
+                                    endMessage = await endMessage.edit({ content: combatEnd });
+                                } else {
+                                    let response
+                                    combatEnd += `Equipement actuel     =>     Equipement trouvé\n${itemCurrent[0].name}     =>     ${equipment.name}\nForce : ${itemCurrent[0].str}     =>     ${equipment.str}\nDégat Min : ${itemCurrent[0].dmgMin}     =>     ${equipment.dmgMin}\nDégat Max : ${itemCurrent[0].dmgMax}     =>     ${equipment.dmgMax}\nDextérité : ${itemCurrent[0].dex}     =>     ${equipment.dex}\nDéfense : ${itemCurrent[0].def}     =>     ${equipment.def}\nDéfense Min : ${itemCurrent[0].defMin}     =>     ${equipment.defMin}\nDéfense Max : ${itemCurrent[0].defMax}     =>     ${equipment.defMax}\nPoint d'action : ${itemCurrent[0].pa}     =>     ${equipment.pa}\n`
+                                    combatEnd += `Voulez équipez le nouvel équipement ${equipment.name} ? ("Oui" pour l'équiper, "Non" pour le vendre)\n`;
+                                    endMessage = await endMessage.edit({ content: combatEnd });
+                                    const filterColl = (m) => m.author.id === message.author.id;
+                                    const collector = message.channel.createMessageCollector({ filter: filterColl, time: 60000 });
+                                    collector.on('collect', (m) => {
+                                        const userMessage = m.content.toLowerCase();
+
+                                        if (['oui', 'o', 'yes', 'y'].includes(userMessage)) {
+                                            response = 'oui';
+
+                                            collector.stop();
+                                        } else if (['non', 'n', 'no'].includes(userMessage)) {
+                                            response = 'non';
+
+                                            collector.stop();
+                                        }
+                                    });
+                                    collector.on('end', async (collected, reason) => {
+                                        if (response === 'oui') {
+                                            // Traitez le cas où l'équipement est équipé
+                                            await changeEquipment(equipment, itemCurrent[0], attacker)
+                                            await connection.promise().query('UPDATE charactère SET gold = gold + ? WHERE id = ?', [newGold, attacker.id]);
+                                            combatEnd += `Vous avez vendu ${itemCurrent[0].name} pour ${itemCurrent[0].gold} Gold`;
+                                            endMessage = await endMessage.edit({ content: combatEnd });
+                                        } else {
+                                            // Traitez le cas où l'équipement est vendu
+
+                                            await connection.promise().query('UPDATE charactère SET gold = ? WHERE id = ?', [newGold, attacker.id]);
+                                            combatEnd += `Vous avez vendu ${equipment.name} pour ${equipment.gold} Gold`;
+                                            endMessage = await endMessage.edit({ content: combatEnd });
+
+                                        }
+                                    });
+
+                                }
+                            };
+                        }
                     }
+                    isquestrunning = false
                     questParticipants.splice(index, 1);
                     return; // Sortir de la boucle récursive
                 }
@@ -275,7 +324,7 @@ async function getRandomMonster(playerLevel) {
 }
 
 async function calculateDamage(attacker, defender, message, monster, combatDetails, questMessage) {
-    let dodge = ((defender.dex / attacker.level) - (attacker.dex / attacker.level))
+    let dodge = ((defender.dex - defender.level) - (attacker.dex - attacker.level))
     if (dodge < 5) {
         dodge = 5
     } else if (dodge > 25) {
@@ -287,13 +336,12 @@ async function calculateDamage(attacker, defender, message, monster, combatDetai
 
         return 0; // Aucun dégât
     } else {
-        const damage = Math.floor(Math.random() * (attacker.dmgMax - attacker.dmgMin + 1)) + attacker.str + attacker.dmgMin;
-        const defense = Math.floor(Math.random() * (defender.def + 1));
+        const damage = Math.floor(Math.random() * (attacker.dmgMax - attacker.dmgMin + 1)) + Math.floor(attacker.str / 3) + attacker.dmgMin - attacker.level;
+        const defense = Math.floor(Math.random() * (defender.defMax - defender.defMin + 1)) + Math.floor(defender.def / 3) + defender.defMin - defender.level;
         let damageF = (damage - defense);
         if (damageF < 1) {
             damageF = 1
         }
-
         return damageF;
     }
 }
@@ -319,11 +367,41 @@ function selectMessageWithRate(messages) {
     return messages[0];
 }
 
-function newEquipement() {
+async function changeEquipment(newEquip, oldEquip, player) {
+    // Mettre à jour la valeur du champ correspondant dans la table "charactère"
+    await connection
+        .promise()
+        .query('UPDATE charactère SET ?? = ? WHERE id = ?', [newEquip.type, newEquip.id, player.id]);
 
+    // Soustraire les statistiques de l'ancien équipement des statistiques du joueur
+    await connection
+        .promise()
+        .query(
+            'UPDATE charactère SET str = str - ?, dex = dex - ?, hp = hp - ?, hpMax = hpMax - ?, pa = pa - ?, paMax = paMax - ?, def = def - ?, dmgMin = dmgMin - ?, dmgMax = dmgMax - ?, defMin = defMin - ?, defMax = defMax - ? WHERE id = ?',
+            [oldEquip.str, oldEquip.dex, oldEquip.hp, oldEquip.hp, oldEquip.pa, oldEquip.pa, oldEquip.def, oldEquip.dmgMin, oldEquip.dmgMax, oldEquip.defMin, oldEquip.defMax, player.id]
+        );
+
+    // Ajouter les statistiques du nouvel équipement aux statistiques du joueur
+    await connection
+        .promise()
+        .query(
+            'UPDATE charactère SET str = str + ?, dex = dex + ?, hp = hp + ?, pa = pa + ?, def = def + ?, dmgMin = dmgMin + ?, dmgMax = dmgMax + ? WHERE id = ?',
+            [newEquip.str, newEquip.dex, newEquip.hp, newEquip.pa, newEquip.def, newEquip.dmgMin, newEquip.dmgMax, player.id]
+        );
 }
 
-function getEquipementStats() {
+
+
+async function compareItem(newItem, player) {
+    const [playerEquipmentLoot, _] = await connection
+        .promise()
+        .query('SELECT ?? FROM charactère WHERE id = ?', [newItem.type, player.id]);
+
+    const playerEquipmentId = playerEquipmentLoot[0][newItem.type];
+    const [itemCurrent, itemCurr] = await connection
+        .promise()
+        .query('SELECT * FROM equipement WHERE id = ?', [playerEquipmentId]);
+    return itemCurrent;
 
 }
 
@@ -347,9 +425,29 @@ async function lootEquipement(playerLevel) {
         return;
     }
 
-    // Retournez le monstre choisi
+    // Retournez les équipements lootés
     return lootedEquipments;
 }
+
+async function showEquip(player, message) {
+    const equipmentIds = [player.arme, player.bouclier, player.casque, player.armure, player.gants, player.pieds];
+  
+    const [equipmentRows, _] = await connection
+      .promise()
+      .query('SELECT name FROM equipement WHERE id IN (?)', [equipmentIds]);
+  
+    const equipmentNames = equipmentRows.map(row => row.name);
+
+    // Remplacer les valeurs undefined par "Rien"
+    for (let i = 0; i < equipmentIds.length; i++) {
+        if (equipmentNames[i] === undefined) {
+          equipmentNames[i] = "Rien";
+        }
+      }
+    const equipmentMessage = `Arme : ${equipmentNames[0]}\nArmure : ${equipmentNames[3]}\nBouclier : ${equipmentNames[1]}\nCasque : ${equipmentNames[2]}\nGants : ${equipmentNames[4]}\nChausses : ${equipmentNames[5]}`;
+  
+    message.reply(equipmentMessage);
+  }
 
 // Planifier la tâche de mise à jour toutes les heures
 setInterval(updatePA, 60 * 60 * 1000);
